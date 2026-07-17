@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.os.PowerManager;
 import android.preference.PreferenceManager;
 
+import com.eveningoutpost.dexdrip.GcmActivity;
 import com.eveningoutpost.dexdrip.Home;
 import com.eveningoutpost.dexdrip.models.AlertType;
 import com.eveningoutpost.dexdrip.models.BgReading;
@@ -94,6 +95,12 @@ public class MissedReadingService extends IntentService {
                         aggressive_backoff_timer = 120; // reset
                     }
                 }
+            }
+
+            if (weAreAFollower && !BgReading.last_within_millis(stale_millis)) {
+                // Follower: restarting the collector cannot recover data - ask the master
+                // for a backfill instead - internally rate limited
+                GcmActivity.requestBGsync();
             }
 
 

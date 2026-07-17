@@ -141,6 +141,12 @@ public class DoNothingService extends Service {
                     sleep_time = (minsago < 60) ? ((minsago / 6) * 1000) : 1000; // increase sleep time up to 10s for first hour or revert
                 }
 
+                if (Home.get_follower() && BgReading.getTimeSinceLastReading() > Constants.MINUTE_IN_MS * 11) {
+                    // actively ask the master to backfill missing readings rather than waiting
+                    // for the next push - internally rate limited
+                    GcmActivity.requestBGsync();
+                }
+
                 try {
                     Thread.sleep(sleep_time);
                 } catch (InterruptedException e) {

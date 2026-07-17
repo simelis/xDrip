@@ -531,6 +531,11 @@ public class GcmActivity extends FauxActivity {
     }
 
 
+    // called when fresh glucose data arrives so backfill requests stay responsive
+    public static void resetBgSyncBackoff() {
+        bg_sync_backoff = 0;
+    }
+
     public static void requestBGsync() {
         if (token != null) {
             if ((JoH.tsl() - last_sync_request) > (60 * 1000 * (5 + bg_sync_backoff))) {

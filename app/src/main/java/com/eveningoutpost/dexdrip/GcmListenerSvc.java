@@ -465,6 +465,8 @@ public class GcmListenerSvc extends JamListenerSvc {
                         for (String bgr : bgs) {
                             BgReading.bgReadingInsertFromJson(bgr);
                         }
+                        GcmActivity.resetBgSyncBackoff(); // fresh data arrived
+
                         if (Pref.getBooleanDefaultFalse("follower_chime") && JoH.pratelimit("bgs-notify", 1200)) {
                             JoH.showNotification("New glucose data @" + JoH.hourMinuteString(), "Follower Chime: will alert whenever it has been more than 20 minutes since last", null, 60311, true, true, true);
                             UserError.Log.uel(TAG, "Follower Chime");
