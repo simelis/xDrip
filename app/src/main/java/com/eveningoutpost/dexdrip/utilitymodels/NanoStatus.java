@@ -206,6 +206,13 @@ public class NanoStatus {
 
     public static void setRemote(final String prefix, final String json) {
         PersistentStore.setString(REMOTE_COLLECTOR_STATUS_STORE + prefix, json);
+        PersistentStore.setLong(REMOTE_COLLECTOR_STATUS_STORE + prefix + "-TS", JoH.tsl());
+    }
+
+    // ms since the last remote collector status was received, -1 if never received
+    public static long getRemoteAgeMs(final String prefix) {
+        final long ts = PersistentStore.getLong(REMOTE_COLLECTOR_STATUS_STORE + prefix + "-TS");
+        return ts > 0 ? JoH.msSince(ts) : -1;
     }
 
     public static SpannableString getRemote() {
