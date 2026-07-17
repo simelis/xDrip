@@ -392,6 +392,19 @@ public class GcmActivity extends FauxActivity {
         }
     }
 
+    private static volatile long last_probe_request = 0;
+
+    // Follower-side: actively verify the master<->follower channel while data is stale.
+    // A stock master answers rlcl with its ping (rate limited on its side); any inbound
+    // message refreshes GcmListenerSvc.lastMessageReceived which the fault classifier uses.
+    public static void followerLinkProbe() {
+        if (JoH.tsl() - last_probe_request > (60 * 1000 * 10)) {
+            last_probe_request = JoH.tsl();
+            Log.d(TAG, "Sending follower link probe");
+            GcmActivity.sendMessage("rlcl", new RollCall().populate().toS());
+        }
+    }
+
     static void sendLocation(final String location) {
         if (JoH.pratelimit("gcm-plu", 180)) {
             GcmActivity.sendMessage("plu", location);

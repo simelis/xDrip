@@ -145,6 +145,8 @@ public class DoNothingService extends Service {
                     // actively ask the master to backfill missing readings rather than waiting
                     // for the next push - internally rate limited
                     GcmActivity.requestBGsync();
+                    // and verify the master<->follower channel for fault classification
+                    GcmActivity.followerLinkProbe();
                 }
 
                 try {
