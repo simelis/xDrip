@@ -18,6 +18,7 @@ import com.eveningoutpost.dexdrip.models.JoH;
 import com.eveningoutpost.dexdrip.models.UserError;
 import com.eveningoutpost.dexdrip.utilitymodels.CollectionServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerFault;
 import com.eveningoutpost.dexdrip.utilitymodels.ForegroundServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.InstalledApps;
 import com.eveningoutpost.dexdrip.utilitymodels.NanoStatus;
@@ -220,6 +221,15 @@ public class DoNothingService extends Service {
                 l.add(new StatusItem("Glucose Data", JoH.niceTimeSince(last_bg.timestamp) + " ago"));
             }
 
+            final FollowerFault.Verdict verdict = FollowerFault.classify();
+            if (verdict.lane != FollowerFault.Lane.NONE) {
+                l.add(new StatusItem("Fault source", verdict.message, verdict.lane == FollowerFault.Lane.SENSOR_FAULT ? CRITICAL : BAD));
+            }
+            final long remoteStatusAge = NanoStatus.getRemoteAgeMs("");
+            if (remoteStatusAge > -1) {
+                l.add(new StatusItem("Master status age", JoH.niceTimeScalar(remoteStatusAge) + " ago"));
+            }
+
             if (wakeUpErrors > 0) {
                 l.add(new StatusItem("Slow Wake up", JoH.niceTimeScalar(wake_time_difference)));
                 l.add(new StatusItem("Wake Up Errors", wakeUpErrors));
@@ -279,14 +289,17 @@ public class DoNothingService extends Service {
         }
         if (Home.get_follower()) {
             updateLastBg();
-            final SpannableString remoteStatus = NanoStatus.getRemote();
+            final FollowerFault.Verdict verdict = FollowerFault.classify();
+            // when we have a verdict it already embeds the remote status text
+            final SpannableString remoteStatus = verdict.lane == FollowerFault.Lane.NONE ? NanoStatus.getRemote() :
+                    Span.colorSpan(verdict.message, verdict.lane == FollowerFault.Lane.SENSOR_FAULT ? CRITICAL.color() : BAD.color());
             if (last_bg != null) {
                 if (msSince(last_bg.timestamp) > Constants.MINUTE_IN_MS * 15) {
                     final SpannableString lastBgStatus = Span.colorSpan("Last from master: " + JoH.niceTimeSince(last_bg.timestamp) + " ago", NOTICE.color());
                     return Span.join(true, remoteStatus, pingStatus, lastBgStatus);
                 }
             } else {
-                return Span.join(true, pingStatus, new SpannableString(gs(R.string.no_data_received_from_master_yet)));
+                return Span.join(true, remoteStatus, pingStatus, new SpannableString(gs(R.string.no_data_received_from_master_yet)));
             }
         } else {
             return Span.join(true, pingStatus);
