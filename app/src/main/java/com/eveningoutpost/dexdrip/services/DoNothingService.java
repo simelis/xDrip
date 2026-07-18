@@ -18,6 +18,7 @@ import com.eveningoutpost.dexdrip.models.JoH;
 import com.eveningoutpost.dexdrip.models.UserError;
 import com.eveningoutpost.dexdrip.utilitymodels.CollectionServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerBackfill;
 import com.eveningoutpost.dexdrip.utilitymodels.FollowerFault;
 import com.eveningoutpost.dexdrip.utilitymodels.ForegroundServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.InstalledApps;
@@ -142,12 +143,17 @@ public class DoNothingService extends Service {
                     sleep_time = (minsago < 60) ? ((minsago / 6) * 1000) : 1000; // increase sleep time up to 10s for first hour or revert
                 }
 
-                if (Home.get_follower() && BgReading.getTimeSinceLastReading() > Constants.MINUTE_IN_MS * 11) {
-                    // actively ask the master to backfill missing readings rather than waiting
-                    // for the next push - internally rate limited
-                    GcmActivity.requestBGsync();
-                    // and verify the master<->follower channel for fault classification
-                    GcmActivity.followerLinkProbe();
+                if (Home.get_follower()) {
+                    final boolean stale = BgReading.getTimeSinceLastReading() > Constants.MINUTE_IN_MS * 11;
+                    // request a backfill when data is stale, or when live data is flowing but
+                    // an interior gap remains which the master's 24h blob could fill
+                    if (stale || FollowerBackfill.gapRequestDue()) {
+                        GcmActivity.requestBGsync();
+                    }
+                    if (stale) {
+                        // verify the master<->follower channel for fault classification
+                        GcmActivity.followerLinkProbe();
+                    }
                 }
 
                 try {

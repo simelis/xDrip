@@ -29,6 +29,7 @@ import com.eveningoutpost.dexdrip.models.UserError;
 import com.eveningoutpost.dexdrip.models.UserError.Log;
 import com.eveningoutpost.dexdrip.services.PlusSyncService;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerBackfill;
 import com.eveningoutpost.dexdrip.utilitymodels.InstalledApps;
 import com.eveningoutpost.dexdrip.utilitymodels.PersistentStore;
 import com.eveningoutpost.dexdrip.utilitymodels.Pref;
@@ -553,9 +554,10 @@ public class GcmActivity extends FauxActivity {
         if (token != null) {
             if ((JoH.tsl() - last_sync_request) > (60 * 1000 * (5 + bg_sync_backoff))) {
                 last_sync_request = JoH.tsl();
-                final BgReading bgReading = BgReading.last();
+                // report from before any interior gap so the master's 24h blob can fill it
+                final long reportTs = FollowerBackfill.effectiveRequestTimestamp();
                 if (JoH.pratelimit("gcm-bfr", 299)) {
-                    GcmActivity.sendMessage("bfr", bgReading != null ? "" + bgReading.timestamp : "");
+                    GcmActivity.sendMessage("bfr", reportTs > 0 ? "" + reportTs : "");
                 }
                 bg_sync_backoff++;
             } else {
