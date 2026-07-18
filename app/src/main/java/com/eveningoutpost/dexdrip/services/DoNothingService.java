@@ -145,9 +145,10 @@ public class DoNothingService extends Service {
 
                 if (Home.get_follower()) {
                     final boolean stale = BgReading.getTimeSinceLastReading() > Constants.MINUTE_IN_MS * 11;
-                    // request a backfill when data is stale, or when live data is flowing but
-                    // an interior gap remains which the master's 24h blob could fill
-                    if (stale || FollowerBackfill.gapRequestDue()) {
+                    // request a backfill when data is stale, or when a gap or shallow history
+                    // remains which the master's 24h blob could fill - the token check avoids
+                    // consuming the gap rate limit while registration is still pending
+                    if (stale || (GcmActivity.token != null && FollowerBackfill.gapRequestDue())) {
                         GcmActivity.requestBGsync();
                     }
                     if (stale) {

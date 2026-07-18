@@ -21,16 +21,20 @@ import static com.eveningoutpost.dexdrip.utilitymodels.Constants.MINUTE_IN_MS;
 public class FollowerBackfill {
 
     private static final String TAG = "FollowerBackfill";
-    private static final long GAP_MS = MINUTE_IN_MS * 11;   // more than 2 missed readings
-    private static final long WINDOW_MS = HOUR_IN_MS * 24;  // matches master blob coverage
-    private static final int MAX_READINGS = 300;            // matches master blob limit
+    private static final long GAP_MS = MINUTE_IN_MS * 11;       // more than 2 missed readings
+    private static final long WINDOW_MS = HOUR_IN_MS * 24;      // matches master blob coverage
+    private static final long LEADING_WINDOW_MS = HOUR_IN_MS * 20; // history shallower than this may exist on master
+    private static final int MAX_READINGS = 300;                // matches master blob limit
 
     // Timestamp to report in a bfr request: the reading just before the oldest interior
-    // gap within the window if one exists, otherwise the newest reading, 0 if no data.
+    // gap within the window if one exists, else just before our oldest reading when local
+    // history is shallow (fresh install without restore), else the newest reading.
+    // 0 (send everything) when there is no local data at all.
     public static long effectiveRequestTimestamp() {
         final List<BgReading> readings = BgReading.latestForGraph(MAX_READINGS, JoH.tsl() - WINDOW_MS);
         if (readings == null || readings.isEmpty()) return 0;
-        long result = readings.get(0).timestamp; // list is newest first
+        final long newest = readings.get(0).timestamp; // list is newest first
+        long result = newest;
         for (int i = 0; i < readings.size() - 1; i++) {
             final long newer = readings.get(i).timestamp;
             final long older = readings.get(i + 1).timestamp;
@@ -38,23 +42,40 @@ public class FollowerBackfill {
                 result = older; // report from before the gap - oldest gap wins
             }
         }
+        if (result == newest) {
+            final long oldest = readings.get(readings.size() - 1).timestamp;
+            if (JoH.msSince(oldest) < LEADING_WINDOW_MS) {
+                result = oldest - 1; // we may be missing history from before our oldest reading
+            }
+        }
         return result;
     }
 
-    // Is there an interior gap in the recent window that a backfill request could fill?
+    // Is there a gap in local data that a backfill request could fill: an interior gap,
+    // a shallow history (fresh install without database restore), or no data at all?
     // Rate limited so unfillable gaps (sensor stopped, warmup) don't cause request spam.
     public static boolean gapRequestDue() {
         final List<BgReading> readings = BgReading.latestForGraph(MAX_READINGS, JoH.tsl() - WINDOW_MS);
-        if (readings == null || readings.size() < 2) return false;
-        for (int i = 0; i < readings.size() - 1; i++) {
-            if (readings.get(i).timestamp - readings.get(i + 1).timestamp > GAP_MS) {
-                if (JoH.pratelimit("follower-gap-backfill", 5400)) {
-                    UserError.Log.uel(TAG, "Interior reading gap detected before "
-                            + JoH.dateTimeText(readings.get(i).timestamp) + " - requesting backfill");
-                    return true;
+        String reason = null;
+        if (readings == null || readings.isEmpty()) {
+            reason = "no local data";
+        } else {
+            for (int i = 0; i < readings.size() - 1; i++) {
+                if (readings.get(i).timestamp - readings.get(i + 1).timestamp > GAP_MS) {
+                    reason = "interior gap before " + JoH.dateTimeText(readings.get(i).timestamp);
+                    break;
                 }
-                return false;
             }
+            if (reason == null) {
+                final long oldest = readings.get(readings.size() - 1).timestamp;
+                if (JoH.msSince(oldest) < LEADING_WINDOW_MS) {
+                    reason = "local history only reaches back to " + JoH.dateTimeText(oldest);
+                }
+            }
+        }
+        if (reason != null && JoH.pratelimit("follower-gap-backfill", 5400)) {
+            UserError.Log.uel(TAG, "Backfill due: " + reason);
+            return true;
         }
         return false;
     }
