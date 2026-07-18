@@ -24,6 +24,7 @@ public class FollowerBackfill {
     private static final long GAP_MS = MINUTE_IN_MS * 11;       // more than 2 missed readings
     private static final long WINDOW_MS = HOUR_IN_MS * 24;      // matches master blob coverage
     private static final long LEADING_WINDOW_MS = HOUR_IN_MS * 20; // history shallower than this may exist on master
+    private static final long GRACE_MS = MINUTE_IN_MS * 15;     // let the master's own push backfill heal fresh gaps first
     private static final int MAX_READINGS = 300;                // matches master blob limit
 
     // Timestamp to report in a bfr request: the reading just before the oldest interior
@@ -62,8 +63,13 @@ public class FollowerBackfill {
         } else {
             for (int i = 0; i < readings.size() - 1; i++) {
                 if (readings.get(i).timestamp - readings.get(i + 1).timestamp > GAP_MS) {
-                    reason = "interior gap before " + JoH.dateTimeText(readings.get(i).timestamp);
-                    break;
+                    // when a master recovers from a collection outage it backfills followers
+                    // by pushing the recovered readings itself - grace time avoids requesting
+                    // a redundant blob while that native healing may still be in progress
+                    if (JoH.msSince(readings.get(i).timestamp) > GRACE_MS) {
+                        reason = "interior gap before " + JoH.dateTimeText(readings.get(i).timestamp);
+                    }
+                    break; // most recent gap decides; if it is fresh, wait for push healing
                 }
             }
             if (reason == null) {
