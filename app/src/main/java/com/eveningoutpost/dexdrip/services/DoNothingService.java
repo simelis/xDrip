@@ -18,6 +18,8 @@ import com.eveningoutpost.dexdrip.models.JoH;
 import com.eveningoutpost.dexdrip.models.UserError;
 import com.eveningoutpost.dexdrip.utilitymodels.CollectionServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerCadence;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerFault;
 import com.eveningoutpost.dexdrip.utilitymodels.ForegroundServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.InstalledApps;
 import com.eveningoutpost.dexdrip.utilitymodels.NanoStatus;
@@ -141,6 +143,14 @@ public class DoNothingService extends Service {
                     sleep_time = (minsago < 60) ? ((minsago / 6) * 1000) : 1000; // increase sleep time up to 10s for first hour or revert
                 }
 
+                if (Home.get_follower()) {
+                    final boolean stale = BgReading.getTimeSinceLastReading() > FollowerCadence.staleMs();
+                    if (stale) {
+                        // verify the master<->follower channel for fault classification
+                        GcmActivity.followerLinkProbe();
+                    }
+                }
+
                 try {
                     Thread.sleep(sleep_time);
                 } catch (InterruptedException e) {
@@ -176,7 +186,9 @@ public class DoNothingService extends Service {
 
     private void setFailOverTimer() {
         if (Home.get_follower()) {
-            final long retry_in = Constants.MINUTE_IN_MS * 10;
+            // re-check more often while data is stale, so a fault is reported promptly
+            final boolean stale = BgReading.getTimeSinceLastReading() > FollowerCadence.staleMs();
+            final long retry_in = stale ? Constants.MINUTE_IN_MS * 2 : Constants.MINUTE_IN_MS * 10;
             UserError.Log.d(TAG, "setFailoverTimer: Restarting in: " + (retry_in / Constants.MINUTE_IN_MS) + " minutes");
             nextWakeUpTime = JoH.tsl() + retry_in;
             //final PendingIntent wakeIntent = PendingIntent.getService(this, 0, new Intent(this, this.getClass()), 0);
@@ -210,6 +222,15 @@ public class DoNothingService extends Service {
             updateLastBg();
             if (last_bg != null) {
                 l.add(new StatusItem("Glucose Data", JoH.niceTimeSince(last_bg.timestamp) + " ago"));
+            }
+
+            final FollowerFault.Verdict verdict = FollowerFault.classify();
+            if (verdict.lane != FollowerFault.Lane.NONE) {
+                l.add(new StatusItem("Fault source", verdict.message, verdict.lane == FollowerFault.Lane.SENSOR_FAULT ? CRITICAL : BAD));
+            }
+            final long remoteStatusAge = NanoStatus.getRemoteAgeMs("");
+            if (remoteStatusAge > -1) {
+                l.add(new StatusItem("Master status age", JoH.niceTimeScalar(remoteStatusAge) + " ago"));
             }
 
             if (wakeUpErrors > 0) {
@@ -271,14 +292,23 @@ public class DoNothingService extends Service {
         }
         if (Home.get_follower()) {
             updateLastBg();
-            final SpannableString remoteStatus = NanoStatus.getRemote();
+            final FollowerFault.Verdict verdict = FollowerFault.classify();
+            // when we have a verdict it already embeds the remote status text
+            final SpannableString remoteStatus = verdict.lane == FollowerFault.Lane.NONE ? NanoStatus.getRemote() :
+                    Span.colorSpan(verdict.message, verdict.lane == FollowerFault.Lane.SENSOR_FAULT ? CRITICAL.color() : BAD.color());
             if (last_bg != null) {
-                if (msSince(last_bg.timestamp) > Constants.MINUTE_IN_MS * 15) {
-                    final SpannableString lastBgStatus = Span.colorSpan("Last from master: " + JoH.niceTimeSince(last_bg.timestamp) + " ago", NOTICE.color());
+                // show how long data has been missing once it is clearly overdue
+                final SpannableString lastBgStatus =
+                        msSince(last_bg.timestamp) > Constants.MINUTE_IN_MS * 15
+                                ? Span.colorSpan("Last from master: " + JoH.niceTimeSince(last_bg.timestamp) + " ago", NOTICE.color())
+                                : null;
+                // a verdict is shown as soon as it exists, and the master's collector
+                // status whenever it is non-empty - it is blank while collection is healthy
+                if (verdict.lane != FollowerFault.Lane.NONE || lastBgStatus != null || remoteStatus.length() > 0) {
                     return Span.join(true, remoteStatus, pingStatus, lastBgStatus);
                 }
             } else {
-                return Span.join(true, pingStatus, new SpannableString(gs(R.string.no_data_received_from_master_yet)));
+                return Span.join(true, remoteStatus, pingStatus, new SpannableString(gs(R.string.no_data_received_from_master_yet)));
             }
         } else {
             return Span.join(true, pingStatus);

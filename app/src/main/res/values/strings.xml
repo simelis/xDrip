@@ -2098,4 +2098,10 @@
     <string name="click">Click</string>
     <string name="to_use_this_instead">to use this instead?</string>
     <string name="the_transmitter_id_you_have_entered_is_incorrect">The transmitter ID or pairing code you have entered is incorrect and would not work.\n\nPlease double-check the details and try again.</string>
+    <string name="follower_fault_device_offline">This device is offline</string>
+    <string name="follower_fault_master_cannot_reach_sensor">Master cannot reach sensor: %1$s (%2$s ago)</string>
+    <string name="follower_fault_sensor_state">%1$s (%2$s ago)</string>
+    <string name="follower_fault_no_glucose_data">Master reachable but no glucose data</string>
+    <string name="follower_fault_nothing_from_master">Nothing from master for %1$s</string>
+    <string name="follower_fault_a_long_time">a long time</string>
 </resources>

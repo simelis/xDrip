@@ -65,10 +65,27 @@ public class GcmListenerSvc extends JamListenerSvc {
     private static final String TAG = "jamorham GCMlis";
     private static final String EXTRA_WAKE_LOCK_ID = "android.support.content.wakelockid";
     public static long lastMessageReceived = 0;
+    // last message a follower received that could only have come from the master;
+    // distinct from lastMessageReceived, which any device on the channel refreshes
+    public static long lastMasterMessageReceived = 0;
     private static byte[] staticKey;
 
     public static int lastMessageMinutesAgo() {
         return (int) ((tsl() - GcmListenerSvc.lastMessageReceived) / 60000);
+    }
+
+    // actions a follower can only receive from a master
+    private static boolean isMasterOnlyAction(final String action) {
+        if (action == null) return false;
+        switch (action) {
+            case "bgs":
+            case "bfb":
+            case "sbu":
+            case "sensorupdate":
+                return true;
+            default:
+                return action.startsWith("nscu");
+        }
     }
 
     // data for MegaStatus
@@ -253,6 +270,9 @@ public class GcmListenerSvc extends JamListenerSvc {
 
                 Log.i(TAG, "Got action: " + action + " with payload: " + payload);
                 lastMessageReceived = tsl();
+                if (Home.get_follower() && isMasterOnlyAction(action)) {
+                    lastMasterMessageReceived = tsl();
+                }
 
 
                 // new treatment

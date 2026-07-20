@@ -392,6 +392,20 @@ public class GcmActivity extends FauxActivity {
         }
     }
 
+    private static volatile long last_probe_request = 0;
+
+    // Follower-side: ask the master for a sensor battery update, so link health can be
+    // measured rather than inferred. sbr is answered only by a master, and the sbu reply
+    // is master-only, so it reaches the fault classifier as a genuine master heartbeat -
+    // unlike a broadcast ping, which any follower would also answer. Once per 10 minutes.
+    public static void followerLinkProbe() {
+        if (token != null && JoH.tsl() - last_probe_request > (60 * 1000 * 10)) {
+            last_probe_request = JoH.tsl();
+            Log.d(TAG, "Sending follower link probe");
+            GcmActivity.sendMessage("sbr", "");
+        }
+    }
+
     static void sendLocation(final String location) {
         if (JoH.pratelimit("gcm-plu", 180)) {
             GcmActivity.sendMessage("plu", location);
