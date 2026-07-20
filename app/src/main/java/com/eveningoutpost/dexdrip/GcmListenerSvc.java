@@ -33,6 +33,7 @@ import com.eveningoutpost.dexdrip.models.UserError.Log;
 import com.eveningoutpost.dexdrip.services.ActivityRecognizedService;
 import com.eveningoutpost.dexdrip.utilitymodels.AlertPlayer;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerBackfill;
 import com.eveningoutpost.dexdrip.utilitymodels.NanoStatus;
 import com.eveningoutpost.dexdrip.utilitymodels.PersistentStore;
 import com.eveningoutpost.dexdrip.utilitymodels.Pref;
@@ -498,14 +499,31 @@ public class GcmListenerSvc extends JamListenerSvc {
                 } else if (action.equals("bfr")) {
                     if (Pref.getBooleanDefaultFalse("plus_follow_master")) {
                         Log.i(TAG, "Processing backfill location request as we are master");
-                        final long remoteRecent = JoH.tolerantParseLong(payload, 0);
+                        // "newestTs", or "olderTs^newerTs" from a follower reporting a gap
+                        final String range[] = payload.split("\\^");
+                        final long remoteRecent = JoH.tolerantParseLong(range[0], 0);
+                        final long gapEnd = range.length > 1 ? JoH.tolerantParseLong(range[1], 0) : 0;
                         final BgReading bgReading = BgReading.last();
                         if (bgReading != null && bgReading.timestamp > remoteRecent) {
-                            GcmActivity.syncBGTable2();
+                            if (gapEnd > remoteRecent
+                                    && BgReading.latestForGraph(1, remoteRecent + 1, gapEnd - 1).isEmpty()) {
+                                // we hold nothing inside the gap - say so instead of
+                                // sending a blob which cannot help
+                                if (JoH.pratelimit("gcm-bfe", 60)) {
+                                    UserError.Log.d(TAG, "Cannot fill requested gap " + FollowerBackfill.describe(payload));
+                                    GcmActivity.sendBackfillEmpty(remoteRecent + "^" + gapEnd);
+                                }
+                            } else {
+                                GcmActivity.syncBGTable2();
+                            }
                         } else {
-                            // TODO reduce logging priority
-                            UserError.Log.e(TAG, "We do not have any more recent data to offer than: " + (bgReading != null ? JoH.dateTimeText(bgReading.timestamp) : "no data"));
+                            Log.d(TAG, "We do not have any more recent data to offer than: " + (bgReading != null ? JoH.dateTimeText(bgReading.timestamp) : "no data"));
                         }
+                    }
+                } else if (action.equals("bfe")) {
+                    if (Home.get_follower()) {
+                        Log.i(TAG, "Master cannot fill gap " + FollowerBackfill.describe(payload));
+                        FollowerBackfill.markGapUnfillable(payload);
                     }
                 } else if (action.equals("sensorupdate")) {
                     Log.i(TAG, "Received sensorupdate packet(s)");

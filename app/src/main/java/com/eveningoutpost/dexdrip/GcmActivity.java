@@ -393,19 +393,6 @@ public class GcmActivity extends FauxActivity {
         }
     }
 
-    private static volatile long last_probe_request = 0;
-
-    // Follower-side: actively verify the master<->follower channel while data is stale.
-    // The master answers rlcl with its ping (rate limited on its side); any inbound
-    // message refreshes GcmListenerSvc.lastMessageReceived which the fault classifier uses.
-    public static void followerLinkProbe() {
-        if (token != null && JoH.tsl() - last_probe_request > (60 * 1000 * 10)) {
-            last_probe_request = JoH.tsl();
-            Log.d(TAG, "Sending follower link probe");
-            GcmActivity.sendMessage("rlcl", new RollCall().populate().toS());
-        }
-    }
-
     static void sendLocation(final String location) {
         if (JoH.pratelimit("gcm-plu", 180)) {
             GcmActivity.sendMessage("plu", location);
@@ -554,10 +541,10 @@ public class GcmActivity extends FauxActivity {
         if (token != null) {
             if ((JoH.tsl() - last_sync_request) > (60 * 1000 * (5 + bg_sync_backoff))) {
                 last_sync_request = JoH.tsl();
-                // report from before any interior gap so the master's 24h blob can fill it
-                final long reportTs = FollowerBackfill.effectiveRequestTimestamp();
+                // reports from before any interior gap so the master's 24h blob can fill it
+                final String reportPayload = FollowerBackfill.requestPayload();
                 if (JoH.pratelimit("gcm-bfr", 299)) {
-                    GcmActivity.sendMessage("bfr", reportTs > 0 ? "" + reportTs : "");
+                    GcmActivity.sendMessage("bfr", reportPayload);
                 }
                 bg_sync_backoff++;
             } else {
@@ -614,6 +601,12 @@ public class GcmActivity extends FauxActivity {
     public static void backfillLink(String id, String key) {
         Log.d(TAG, "sending bfb message: " + id);
         sendMessage("bfb", id + "^" + key);
+    }
+
+    // master side: tell followers we hold nothing inside the gap range they requested
+    public static void sendBackfillEmpty(final String range) {
+        Log.d(TAG, "sending bfe message: " + range);
+        sendMessage("bfe", range);
     }
 
     static void processBFPbundle(String bundle) {
@@ -826,6 +819,7 @@ public class GcmActivity extends FauxActivity {
             case "rlcl":
             case "sbr":
             case "bfr":
+            case "bfe":
             case "nscu":
             case "nscusensor-expiry":
             case "nscus-expiry":
