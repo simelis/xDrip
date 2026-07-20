@@ -39,6 +39,7 @@ public class NanoStatus {
     private static final String LAST_COLLECTOR_STATUS_STORE = "LAST_COLLECTOR_STATUS_STORE";
     private static final String REMOTE_COLLECTOR_STATUS_STORE = "REMOTE_COLLECTOR_STATUS_STORE";
     private static final HashMap<Class<?>, Method> cache = new HashMap<>();
+    private static final HashMap<Class<?>, Method> stateCache = new HashMap<>();
     private static final boolean D = false;
 
     private final String parameter;
@@ -124,6 +125,13 @@ public class NanoStatus {
         return result != null ? result.toString() : null;
     }
 
+    // Machine-readable collector state, synced to followers alongside the display string.
+    // These tokens are part of the sync protocol - do not rename them.
+    public static final String COLLECTOR_STATE_PREFIX = "c-state";
+    public static final String STATE_OK = "ok";
+    public static final String STATE_SENSOR_PROBLEM = "sensor_problem";
+    public static final String STATE_SENSOR_LINK = "sensor_link";
+
     public static SpannableString nanoStatusColor(final String module) {
         switch (module) {
             case "collector":
@@ -133,6 +141,8 @@ public class NanoStatus {
             case "sensor-expiry":
             case "s-expiry":
                 return getLocalOrRemoteSensorExpiry();
+            case COLLECTOR_STATE_PREFIX:
+                return collectorStateNano(DexCollectionType.getCollectorServiceClass());
             default:
                 return new SpannableString("Invalid module type");
         }
@@ -172,6 +182,32 @@ public class NanoStatus {
     }
 
 
+    // Machine-readable counterpart to collectorNano(). Collectors which do not implement
+    // collectorState() yield nothing.
+    static SpannableString collectorStateNano(final Class<?> service) {
+        if (service != null) {
+            try {
+                try {
+                    return (SpannableString) stateCache.get(service).invoke(null);
+                } catch (NullPointerException e) {
+                    final Method method = service.getMethod("collectorState");
+                    stateCache.put(service, method);
+                    return (SpannableString) method.invoke(null);
+                }
+            } catch (NoSuchMethodException e) {
+                // this collector does not expose a state token
+            } catch (Exception e) {
+                val exceptionString = e + " state " + service.getSimpleName();
+                if (!exceptionString.equals(lastException)) {
+                    Log.d(TAG, "reflection exception: " + exceptionString);
+                    lastException = exceptionString;
+                }
+            }
+        }
+        return null;
+    }
+
+
     public static void keepFollowerUpdated() {
         keepFollowerUpdated(true);
     }
@@ -179,6 +215,7 @@ public class NanoStatus {
     public static void keepFollowerUpdated(final boolean ratelimits) {
         keepFollowerUpdated("", 0); // legacy defaults to collector
         keepFollowerUpdated("s-expiry", ratelimits ? 3600 : 0);
+        keepFollowerUpdated(COLLECTOR_STATE_PREFIX, 0); // change gated, sends only on difference
     }
 
     public static void keepFollowerUpdated(final String prefix, final int rateLimit) {

@@ -823,6 +823,7 @@ public class GcmActivity extends FauxActivity {
             case "nscu":
             case "nscusensor-expiry":
             case "nscus-expiry":
+            case "nscuc-state":
             case "esup":
             case "sencalup":
                 synchronized (queue_lock) {

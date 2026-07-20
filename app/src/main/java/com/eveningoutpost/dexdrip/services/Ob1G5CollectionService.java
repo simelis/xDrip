@@ -114,6 +114,7 @@ import com.eveningoutpost.dexdrip.utilitymodels.BroadcastGlucose;
 import com.eveningoutpost.dexdrip.utilitymodels.CollectionServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
 import com.eveningoutpost.dexdrip.utilitymodels.Inevitable;
+import com.eveningoutpost.dexdrip.utilitymodels.NanoStatus;
 import com.eveningoutpost.dexdrip.utilitymodels.PersistentStore;
 import com.eveningoutpost.dexdrip.utilitymodels.Pref;
 import com.eveningoutpost.dexdrip.utilitymodels.RxBleProvider;
@@ -2217,6 +2218,22 @@ public class Ob1G5CollectionService extends G5BaseService {
                 return null;
             }
         }
+    }
+
+    // Machine-readable counterpart to nanoStatus() above, for followers to classify from.
+    public static SpannableString collectorState() {
+        if (android_wear || !usingNativeMode()) return null;
+        loadCalibrationStateAsRequired(); // a restart clears the in-memory state
+        if (lastSensorState == null || lastSensorState == CalibrationState.Unknown) {
+            return null; // claim nothing rather than claim ok
+        }
+        if (lastSensorState != CalibrationState.Ok) {
+            return new SpannableString(NanoStatus.STATE_SENSOR_PROBLEM);
+        }
+        if ((transmitterMAC == null || transmitterMAC.isEmpty()) && transmitterID != null) {
+            return new SpannableString(NanoStatus.STATE_SENSOR_LINK);
+        }
+        return new SpannableString(NanoStatus.STATE_OK);
     }
 
     private static final String PREF_PURDAH = "ob1g5-purdah-time";
