@@ -72,26 +72,28 @@ public class FollowerFault {
             return new Verdict(Lane.FOLLOWER_OFFLINE, xdrip.gs(R.string.follower_fault_device_offline));
         }
 
+        // the master specifically, not any device on the channel: with a second follower
+        // present, general sync traffic keeps flowing while the master is off
+        final long lastRx = GcmListenerSvc.lastMasterMessageReceived;
+        final long linkAge = lastRx > 0 ? msSince(lastRx) : -1;
+        final boolean linkAlive = linkAge > -1 && linkAge < FRESH_LINK_MS;
+
         final long statusAge = NanoStatus.getRemoteAgeMs("");
         final String remote = NanoStatus.getRemote("").toString();
-        if (statusAge > -1 && statusAge < FRESH_STATUS_MS && remote.length() > 0) {
-            // A master which sends the machine-readable collector state token has already
-            // classified itself - no string matching needed. The display text still comes
-            // from the human-readable status. Masters without the token (older app
-            // versions, collectors not exposing one) fall back to matching the text.
-            final String state = freshCollectorState();
+        // The master only resends its status when the text changes, so age alone does not
+        // make it stale: trust it while the sync channel is alive, and for a fixed window
+        // once it is not.
+        if (statusAge > -1 && (statusAge < FRESH_STATUS_MS || linkAlive) && remote.length() > 0) {
+            // classify from the state token when the master sends one, else match the text
+            final String state = freshCollectorState(linkAlive);
             if (NanoStatus.STATE_SENSOR_PROBLEM.equals(state)) {
-                // no "master reports" prefix: the same string is also shown verbatim when
-                // readings are still arriving, and on a follower a sensor state can only
-                // have come from the master
                 return new Verdict(Lane.SENSOR_FAULT,
                         xdrip.gs(R.string.follower_fault_sensor_state, remote, JoH.niceTimeScalar(statusAge)));
             } else if (NanoStatus.STATE_SENSOR_LINK.equals(state)) {
                 return new Verdict(Lane.SENSOR_MASTER_LINK,
                         xdrip.gs(R.string.follower_fault_master_cannot_reach_sensor, remote, JoH.niceTimeScalar(statusAge)));
             } else if (NanoStatus.STATE_OK.equals(state)) {
-                // the master vouches its sensor side is fine - skip the string matching
-                // and fall through to the link lanes below
+                // sensor side is fine - fall through to the link lanes
             } else {
                 if (matchesSensorState(remote)) {
                     return new Verdict(Lane.SENSOR_FAULT,
@@ -104,9 +106,7 @@ public class FollowerFault {
             }
         }
 
-        final long lastRx = GcmListenerSvc.lastMessageReceived;
-        final long linkAge = lastRx > 0 ? msSince(lastRx) : -1;
-        if (linkAge > -1 && linkAge < FRESH_LINK_MS) {
+        if (linkAlive) {
             return new Verdict(Lane.DATA_GAP, xdrip.gs(R.string.follower_fault_no_glucose_data));
         }
 
@@ -114,24 +114,18 @@ public class FollowerFault {
                 linkAge > -1 ? JoH.niceTimeScalar(linkAge) : xdrip.gs(R.string.follower_fault_a_long_time)));
     }
 
-    // Fresh machine-readable collector state from a master which sends one, null otherwise
-    private static String freshCollectorState() {
+    // Collector state token from a master which sends one, null otherwise. Trusted on the
+    // same terms as the display string above.
+    private static String freshCollectorState(final boolean linkAlive) {
         final long age = NanoStatus.getRemoteAgeMs(NanoStatus.COLLECTOR_STATE_PREFIX);
-        if (age < 0 || age > FRESH_STATUS_MS) return null;
+        if (age < 0 || (age > FRESH_STATUS_MS && !linkAlive)) return null;
         final String state = NanoStatus.getRemote(NanoStatus.COLLECTOR_STATE_PREFIX).toString();
         return state.length() > 0 ? state : null;
     }
 
-    // Does the master's collector status text indicate a sensor-side problem?
-    //
-    // Fallback for masters which do not send the collector state token (older app
-    // versions, collectors not exposing one). Best effort only: it recognises the states
-    // of the native Dexcom collector (CalibrationState plus the transitional strings it
-    // emits). A master collecting from another sensor family simply does not match here
-    // and its follower falls back to the generic DATA_GAP lane, which is still correct,
-    // just less specific. These literals track untranslated strings in the collector;
-    // should those ever become localised, matching degrades to the generic lane rather
-    // than misreporting.
+    // Does the master's collector status text indicate a sensor-side problem? Best effort
+    // fallback for masters which send no state token: matches the native Dexcom collector's
+    // status strings, and yields the generic lane for anything it does not recognise.
     private static final String SEARCHING_FOR_PREFIX = "Searching for";
 
     private static boolean matchesSensorState(final String remote) {
