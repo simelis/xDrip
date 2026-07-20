@@ -29,6 +29,7 @@ import com.eveningoutpost.dexdrip.models.UserError;
 import com.eveningoutpost.dexdrip.models.UserError.Log;
 import com.eveningoutpost.dexdrip.services.PlusSyncService;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerBackfill;
 import com.eveningoutpost.dexdrip.utilitymodels.InstalledApps;
 import com.eveningoutpost.dexdrip.utilitymodels.PersistentStore;
 import com.eveningoutpost.dexdrip.utilitymodels.Pref;
@@ -392,6 +393,19 @@ public class GcmActivity extends FauxActivity {
         }
     }
 
+    private static volatile long last_probe_request = 0;
+
+    // Follower-side: actively verify the master<->follower channel while data is stale.
+    // The master answers rlcl with its ping (rate limited on its side); any inbound
+    // message refreshes GcmListenerSvc.lastMessageReceived which the fault classifier uses.
+    public static void followerLinkProbe() {
+        if (token != null && JoH.tsl() - last_probe_request > (60 * 1000 * 10)) {
+            last_probe_request = JoH.tsl();
+            Log.d(TAG, "Sending follower link probe");
+            GcmActivity.sendMessage("rlcl", new RollCall().populate().toS());
+        }
+    }
+
     static void sendLocation(final String location) {
         if (JoH.pratelimit("gcm-plu", 180)) {
             GcmActivity.sendMessage("plu", location);
@@ -531,13 +545,19 @@ public class GcmActivity extends FauxActivity {
     }
 
 
+    // called when fresh glucose data arrives so backfill requests stay responsive
+    public static void resetBgSyncBackoff() {
+        bg_sync_backoff = 0;
+    }
+
     public static void requestBGsync() {
         if (token != null) {
             if ((JoH.tsl() - last_sync_request) > (60 * 1000 * (5 + bg_sync_backoff))) {
                 last_sync_request = JoH.tsl();
-                final BgReading bgReading = BgReading.last();
+                // report from before any interior gap so the master's 24h blob can fill it
+                final long reportTs = FollowerBackfill.effectiveRequestTimestamp();
                 if (JoH.pratelimit("gcm-bfr", 299)) {
-                    GcmActivity.sendMessage("bfr", bgReading != null ? "" + bgReading.timestamp : "");
+                    GcmActivity.sendMessage("bfr", reportTs > 0 ? "" + reportTs : "");
                 }
                 bg_sync_backoff++;
             } else {

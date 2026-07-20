@@ -18,6 +18,8 @@ import com.eveningoutpost.dexdrip.models.JoH;
 import com.eveningoutpost.dexdrip.models.UserError;
 import com.eveningoutpost.dexdrip.utilitymodels.CollectionServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.Constants;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerBackfill;
+import com.eveningoutpost.dexdrip.utilitymodels.FollowerCadence;
 import com.eveningoutpost.dexdrip.utilitymodels.ForegroundServiceStarter;
 import com.eveningoutpost.dexdrip.utilitymodels.InstalledApps;
 import com.eveningoutpost.dexdrip.utilitymodels.NanoStatus;
@@ -139,6 +141,16 @@ public class DoNothingService extends Service {
                 if (minsago > 6) {
                     if (Home.get_follower()) GcmActivity.requestPing();
                     sleep_time = (minsago < 60) ? ((minsago / 6) * 1000) : 1000; // increase sleep time up to 10s for first hour or revert
+                }
+
+                if (Home.get_follower()) {
+                    // Only evaluated when not stale: arriving readings are the evidence that
+                    // the link works and that any resend replay would already have happened.
+                    // The token check avoids consuming the rate limit while unregistered.
+                    final boolean stale = BgReading.getTimeSinceLastReading() > FollowerCadence.staleMs();
+                    if (!stale && GcmActivity.token != null && FollowerBackfill.gapRequestDue()) {
+                        GcmActivity.requestBGsync();
+                    }
                 }
 
                 try {
