@@ -477,6 +477,7 @@ public class GcmListenerSvc extends JamListenerSvc {
                 } else if (action.equals("bfb")) {
                     final String bfb[] = payload.split("\\^");
                     if (Pref.getString("dex_collection_method", "").equals("Follower")) {
+                        UserError.Log.uel(TAG, "Backfill blob pointer received - downloading");
                         Log.i(TAG, "Processing backfill location packet as we are a follower");
                         staticKey = CipherUtils.hexToBytes(bfb[1]);
                         final Handler mainHandler = new Handler(getMainLooper());
@@ -658,7 +659,7 @@ public class GcmListenerSvc extends JamListenerSvc {
             try {
                 if (result.length > 0) {
                     if ((staticKey == null) || (staticKey.length != 16)) {
-                        Log.e(TAG, "Error processing security key");
+                        UserError.Log.uel(TAG, "Backfill blob: error processing security key");
                     } else {
                         byte[] plainbytes = JoH.decompressBytesToBytes(CipherUtils.decryptBytes(result, staticKey));
                         staticKey = null;
@@ -666,14 +667,14 @@ public class GcmListenerSvc extends JamListenerSvc {
                         if (plainbytes.length > 0) {
                             GcmActivity.processBFPbundle(new String(plainbytes, 0, plainbytes.length, "UTF-8"));
                         } else {
-                            Log.e(TAG, "Error processing data - empty");
+                            UserError.Log.uel(TAG, "Backfill blob: error processing data - empty");
                         }
                     }
                 } else {
-                    Log.e(TAG, "Error processing - no data - try again?");
+                    UserError.Log.uel(TAG, "Backfill blob: download returned no data");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Got error in BFP callback: " + e.toString());
+                UserError.Log.uel(TAG, "Backfill blob: error in BFP callback: " + e);
             } finally {
                 JoH.releaseWakeLock(wl);
             }
