@@ -114,6 +114,15 @@ public class FollowerFault {
                 linkAge > -1 ? JoH.niceTimeScalar(linkAge) : xdrip.gs(R.string.follower_fault_a_long_time)));
     }
 
+    // Current readings prove the master reached the sensor, so a stored status saying it
+    // cannot is an update which never arrived and should not be displayed.
+    public static boolean searchStatusObsolete() {
+        if (BgReading.getTimeSinceLastReading() >= FollowerCadence.staleMs()) return false;
+        return NanoStatus.STATE_SENSOR_LINK.equals(
+                NanoStatus.getRemote(NanoStatus.COLLECTOR_STATE_PREFIX).toString())
+                || NanoStatus.getRemote("").toString().startsWith(SEARCHING_FOR_PREFIX);
+    }
+
     // Collector state token from a master which sends one, null otherwise. Trusted on the
     // same terms as the display string above.
     private static String freshCollectorState(final boolean linkAlive) {

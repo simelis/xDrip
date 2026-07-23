@@ -294,8 +294,9 @@ public class DoNothingService extends Service {
             updateLastBg();
             final FollowerFault.Verdict verdict = FollowerFault.classify();
             // when we have a verdict it already embeds the remote status text
-            final SpannableString remoteStatus = verdict.lane == FollowerFault.Lane.NONE ? NanoStatus.getRemote() :
-                    Span.colorSpan(verdict.message, verdict.lane == FollowerFault.Lane.SENSOR_FAULT ? CRITICAL.color() : BAD.color());
+            final SpannableString remoteStatus = verdict.lane != FollowerFault.Lane.NONE
+                    ? Span.colorSpan(verdict.message, verdict.lane == FollowerFault.Lane.SENSOR_FAULT ? CRITICAL.color() : BAD.color())
+                    : FollowerFault.searchStatusObsolete() ? new SpannableString("") : NanoStatus.getRemote();
             if (last_bg != null) {
                 // show how long data has been missing once it is clearly overdue
                 final SpannableString lastBgStatus =
